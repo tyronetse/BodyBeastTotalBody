@@ -225,6 +225,16 @@
   .now-playing video { width: 100%; display: block; background: #000; aspect-ratio: 16/9; }
   .np-note { padding: 8px 14px 12px; font-size: 13px; color: var(--muted); }
   .np-note:empty { display: none; }
+  .np-weight {
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 14px 14px; font-size: 14px; color: var(--muted);
+  }
+  .np-weight input {
+    width: 80px; padding: 8px 10px; font-size: 16px; font-weight: 700;
+    border: 1px solid var(--line); font-family: inherit; color: var(--ink);
+    background: var(--bg);
+  }
+  .np-last { font-size: 13px; }
   .np-durations {
     display: flex; align-items: center; gap: 8px;
     padding: 10px 14px 14px; font-size: 13px; color: var(--muted);
@@ -285,6 +295,12 @@
   </div>
   <video id="npVideo" controls playsinline preload="metadata" loop></video>
   <div class="np-note" id="npNote"></div>
+  <div class="np-weight">
+    <span>Weight:</span>
+    <input type="number" id="weightInput" min="0" step="2.5" placeholder="0" inputmode="decimal">
+    <span>lbs</span>
+    <span class="np-last" id="weightLast"></span>
+  </div>
   <div class="np-durations">
     <span>Set timer:</span>
     <button data-dur="30">30s</button>
@@ -297,6 +313,12 @@
 <div class="rest-timer" id="restTimer">
   <div class="t" id="restTime">60</div>
   <div class="l">seconds rest — tap Complete set to skip</div>
+  <div class="np-durations" style="justify-content:center; padding-bottom:4px;">
+    <button data-rdur="30">30s</button>
+    <button data-rdur="45">45s</button>
+    <button data-rdur="60" class="sel">60s</button>
+    <button data-rdur="90">90s</button>
+  </div>
 </div>
 
 <div id="circuits"></div>
@@ -422,11 +444,28 @@ function playBeep() {
 }
 
 // ---------- Timers ----------
+const weightInput = document.getElementById('weightInput');
+const weightLast = document.getElementById('weightLast');
+function weightKey(name) { return 'bb_weight_' + name; }
+function loadWeight(name) {
+  const saved = localStorage.getItem(weightKey(name));
+  weightInput.value = saved || '';
+  weightLast.textContent = saved ? `Last: ${saved} lbs` : '';
+}
+weightInput.addEventListener('change', () => {
+  if (current < SETS.length) {
+    const v = weightInput.value.trim();
+    if (v) localStorage.setItem(weightKey(SETS[current].name), v);
+    else localStorage.removeItem(weightKey(SETS[current].name));
+    loadWeight(SETS[current].name);
+  }
+});
 function loadNowPlaying() {
   if (current < SETS.length) {
     const s = SETS[current];
     npName.textContent = `Set ${current + 1}: ${s.name}`;
     npNote.textContent = s.note || '';
+    loadWeight(s.name);
     if (npVideo.getAttribute('src') !== s.video) {
       npVideo.setAttribute('src', s.video);
       npVideo.load();
@@ -468,10 +507,19 @@ function startElapsed() {
 }
 function stopElapsed() { clearInterval(elapsedTick); }
 
+let restDuration = 60;
+document.querySelectorAll('[data-rdur]').forEach(b => {
+  b.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    document.querySelectorAll('[data-rdur]').forEach(x => x.classList.remove('sel'));
+    b.classList.add('sel');
+    restDuration = parseInt(b.dataset.rdur, 10);
+  });
+});
 function startRest() {
   mode = 'rest';
   stopSetTimer();
-  restLeft = 60;
+  restLeft = restDuration;
   restTime.textContent = restLeft;
   restTimer.style.display = 'block';
   btnComplete.textContent = 'Skip rest';
@@ -499,6 +547,7 @@ function advanceSet() {
   current++;
   if (current >= SETS.length) {
     mode = 'done';
+    releaseWakeLock();
     stopElapsed();
     stopSetTimer();
     nowPlaying.style.display = 'none';
@@ -577,10 +626,28 @@ function resumeAll() {
   btnStartPause.textContent = 'Pause';
 }
 
+let wakeLock = null;
+async function requestWakeLock() {
+  try {
+    if ('wakeLock' in navigator) {
+      wakeLock = await navigator.wakeLock.request('screen');
+    }
+  } catch (e) {}
+}
+function releaseWakeLock() {
+  try { if (wakeLock) { wakeLock.release(); wakeLock = null; } } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && (mode === 'exercise' || mode === 'rest')) {
+    requestWakeLock();
+  }
+});
+
 btnStartPause.addEventListener('click', () => {
   unlockAudio();
   if (mode === 'idle') {
     mode = 'exercise';
+    requestWakeLock();
     startElapsed();
     startSetTimer();
     render();
