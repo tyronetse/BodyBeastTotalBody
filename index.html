@@ -303,7 +303,6 @@ const CIRCUITS = [
     ]},
 ];
 
-// Build a flat list of 32 sets (each exercise x2 rounds)
 const SETS = [];
 CIRCUITS.forEach((c, ci) => {
   for (let round = 1; round <= 2; round++) {
@@ -330,51 +329,30 @@ CIRCUITS.forEach((c, ci) => {
   circuitsEl.appendChild(div);
 });
 
-let current = 0;
+// ---------- State ----------
+let current = 0;            // index of active set
+let mode = 'exercise';      // 'exercise' | 'rest' | 'done'
+let setStart = null, setTick = null;
+let restTick = null, restLeft = 0;
+let workoutStart = null, elapsedTick = null;
+
 const setCounter = document.getElementById('setCounter');
+const elapsedEl = document.getElementById('elapsedTimer');
 const progressFill = document.getElementById('progressFill');
 const btnBack = document.getElementById('btnBack');
 const btnComplete = document.getElementById('btnComplete');
 const btnNext = document.getElementById('btnNext');
 const restTimer = document.getElementById('restTimer');
 const restTime = document.getElementById('restTime');
-let restInterval = null;
+const setTimerLabel = document.getElementById('setTimerLabel');
+const setTimerEl = document.getElementById('setTimer');
+const setTimerWrap = document.getElementById('setTimerWrap');
 
-function markActive() {
-  document.querySelectorAll('.exercise').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.exercise').forEach(el => el.classList.remove('done'));
-  SETS.forEach((s, i) => {
-    const el = document.getElementById(`ex-${s.circuit}-${s.ex}`);
-    if (!el) return;
-    if (i < current) el.classList.add('done');
-    if (i === current) {
-      el.classList.add('active');
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-  });
+function fmt(s) {
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
 }
 
-function render() {
-  if (current >= SETS.length) {
-    stopElapsed();
-    stopSetTimer();
-    document.getElementById('setTimerWrap').style.display = 'none';
-    document.getElementById('finish').style.display = 'block';
-    document.getElementById('controls').style.display = 'none';
-    restTimer.style.display = 'none';
-    setCounter.textContent = '32 of 32';
-    progressFill.style.width = '100%';
-    markActive();
-    return;
-  }
-  setCounter.textContent = `Set ${current + 1} of 32`;
-  progressFill.style.width = `${(current / SETS.length) * 100}%`;
-  btnBack.disabled = current === 0;
-  btnNext.disabled = current >= SETS.length - 1;
-  markActive();
-  startSetTimer();
-}
-
+// ---------- Audio ----------
 let audioCtx = null;
 function unlockAudio() {
   try {
@@ -386,91 +364,135 @@ function playBeep() {
   try {
     unlockAudio();
     if (!audioCtx) return;
-    // Three rising beeps
-    [0, 0.25, 0.5].forEach((delay, i) => {
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.frequency.value = [660, 880, 990][i];
-      osc.type = 'sine';
-      const start = audioCtx.currentTime + delay;
-      gain.gain.setValueAtTime(0.001, start);
-      gain.gain.exponentialRampToValueAtTime(0.5, start + 0.03);
-      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.2);
-      osc.start(start);
-      osc.stop(start + 0.25);
+    [0, 0.25, 0.5].forEach((d, i) => {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.connect(g); g.connect(audioCtx.destination);
+      o.frequency.value = [660, 880, 990][i];
+      o.type = 'sine';
+      const t = audioCtx.currentTime + d;
+      g.gain.setValueAtTime(0.001, t);
+      g.gain.exponentialRampToValueAtTime(0.5, t + 0.03);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+      o.start(t); o.stop(t + 0.25);
     });
   } catch (e) {}
 }
-function startRest() {
-  let t = 60;
-  restTime.textContent = t;
-  restTimer.style.display = 'block';
-  clearInterval(restInterval);
-  restInterval = setInterval(() => {
-    t--;
-    restTime.textContent = t;
-    if (t <= 0) {
-      clearInterval(restInterval);
-      restTimer.style.display = 'none';
-      playBeep();
-    }
-  }, 1000);
-}
 
-btnComplete.addEventListener('click', () => {
-  unlockAudio();
-  clearInterval(restInterval);
-  restTimer.style.display = 'none';
-  if (current < SETS.length) { current++; }
-  if (current < SETS.length) startRest();
-  render();
-});
-btnNext.addEventListener('click', () => {
-  clearInterval(restInterval);
-  restTimer.style.display = 'none';
-  if (current < SETS.length - 1) { current++; render(); }
-});
-btnBack.addEventListener('click', () => {
-  clearInterval(restInterval);
-  restTimer.style.display = 'none';
-  if (current > 0) { current--; render(); }
-});
-
-let workoutStart = null;
-let elapsedInterval = null;
-let setStart = null;
-let setInterval = null;
-function fmtTime(s) {
-  const m = Math.floor(s / 60);
-  const sec = s % 60;
-  return m + ':' + String(sec).padStart(2, '0');
-}
-function startElapsed() {
-  if (workoutStart) return;
-  workoutStart = Date.now();
-  elapsedInterval = setInterval(() => {
-    const s = Math.floor((Date.now() - workoutStart) / 1000);
-    document.getElementById('elapsedTimer').textContent = fmtTime(s);
-  }, 1000);
-}
-function stopElapsed() { clearInterval(elapsedInterval); }
+// ---------- Timers ----------
 function startSetTimer() {
   stopSetTimer();
   setStart = Date.now();
-  const label = current < SETS.length ? SETS[current].name : 'Done';
-  document.getElementById('setTimerLabel').textContent = label;
-  document.getElementById('setTimer').textContent = '0:00';
-  setInterval = setInterval(() => {
-    const s = Math.floor((Date.now() - setStart) / 1000);
-    document.getElementById('setTimer').textContent = fmtTime(s);
+  setTimerEl.textContent = '0:00';
+  setTimerLabel.textContent = current < SETS.length ? SETS[current].name : 'Done';
+  setTick = setInterval(() => {
+    setTimerEl.textContent = fmt(Math.floor((Date.now() - setStart) / 1000));
   }, 1000);
 }
-function stopSetTimer() { clearInterval(setInterval); }
+function stopSetTimer() { clearInterval(setTick); setTick = null; }
 
-// Start total clock on first user interaction
-btnComplete.addEventListener('click', () => { startElapsed(); }, true);
+function startElapsed() {
+  if (workoutStart) return;
+  workoutStart = Date.now();
+  elapsedTick = setInterval(() => {
+    elapsedEl.textContent = fmt(Math.floor((Date.now() - workoutStart) / 1000));
+  }, 1000);
+}
+function stopElapsed() { clearInterval(elapsedTick); }
+
+function startRest() {
+  mode = 'rest';
+  stopSetTimer();
+  restLeft = 60;
+  restTime.textContent = restLeft;
+  restTimer.style.display = 'block';
+  btnComplete.textContent = 'Skip rest';
+  clearInterval(restTick);
+  restTick = setInterval(() => {
+    restLeft--;
+    restTime.textContent = restLeft;
+    if (restLeft <= 0) {
+      clearInterval(restTick);
+      playBeep();
+      advanceSet();
+    }
+  }, 1000);
+  // Scroll timer into view so it's visible
+  restTimer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+function stopRest() {
+  clearInterval(restTick); restTick = null;
+  restTimer.style.display = 'none';
+  btnComplete.textContent = 'Complete set';
+}
+
+function advanceSet() {
+  stopRest();
+  current++;
+  if (current >= SETS.length) {
+    mode = 'done';
+    stopElapsed();
+    stopSetTimer();
+    setTimerWrap.style.display = 'none';
+    document.getElementById('finish').style.display = 'block';
+    document.getElementById('controls').style.display = 'none';
+    setCounter.textContent = '32 of 32';
+    progressFill.style.width = '100%';
+    markActive();
+    return;
+  }
+  mode = 'exercise';
+  render();
+  startSetTimer();
+}
+
+// ---------- Render ----------
+function markActive() {
+  document.querySelectorAll('.exercise').forEach(el => {
+    el.classList.remove('active'); el.classList.remove('done');
+  });
+  SETS.forEach((s, i) => {
+    const el = document.getElementById(`ex-${s.circuit}-${s.ex}`);
+    if (!el) return;
+    if (i < current) el.classList.add('done');
+    if (i === current && mode === 'exercise') {
+      el.classList.add('active');
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  });
+}
+function render() {
+  setCounter.textContent = `Set ${Math.min(current + 1, 32)} of 32`;
+  progressFill.style.width = `${(current / SETS.length) * 100}%`;
+  btnBack.disabled = current === 0 && mode === 'exercise';
+  markActive();
+}
+
+// ---------- Buttons ----------
+btnComplete.addEventListener('click', () => {
+  unlockAudio();
+  startElapsed();
+  if (mode === 'exercise') {
+    // Finish current set -> rest
+    startRest();
+  } else if (mode === 'rest') {
+    // Skip rest -> next set
+    advanceSet();
+  }
+});
+btnNext.addEventListener('click', () => {
+  unlockAudio();
+  startElapsed();
+  if (mode === 'rest') { advanceSet(); }
+  else if (current < SETS.length - 1) { stopSetTimer(); current++; render(); startSetTimer(); }
+});
+btnBack.addEventListener('click', () => {
+  stopRest();
+  stopSetTimer();
+  if (current > 0) { current--; }
+  mode = 'exercise';
+  render();
+  startSetTimer();
+});
 
 render();
 startSetTimer();
