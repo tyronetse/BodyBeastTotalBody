@@ -355,6 +355,34 @@ function render() {
   markActive();
 }
 
+let audioCtx = null;
+function unlockAudio() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch (e) {}
+}
+function playBeep() {
+  try {
+    unlockAudio();
+    if (!audioCtx) return;
+    // Three rising beeps
+    [0, 0.25, 0.5].forEach((delay, i) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.frequency.value = [660, 880, 990][i];
+      osc.type = 'sine';
+      const start = audioCtx.currentTime + delay;
+      gain.gain.setValueAtTime(0.001, start);
+      gain.gain.exponentialRampToValueAtTime(0.5, start + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.2);
+      osc.start(start);
+      osc.stop(start + 0.25);
+    });
+  } catch (e) {}
+}
 function startRest() {
   let t = 60;
   restTime.textContent = t;
@@ -363,11 +391,16 @@ function startRest() {
   restInterval = setInterval(() => {
     t--;
     restTime.textContent = t;
-    if (t <= 0) { clearInterval(restInterval); restTimer.style.display = 'none'; }
+    if (t <= 0) {
+      clearInterval(restInterval);
+      restTimer.style.display = 'none';
+      playBeep();
+    }
   }, 1000);
 }
 
 btnComplete.addEventListener('click', () => {
+  unlockAudio();
   clearInterval(restInterval);
   restTimer.style.display = 'none';
   if (current < SETS.length) { current++; }
