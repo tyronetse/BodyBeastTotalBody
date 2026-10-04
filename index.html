@@ -225,6 +225,16 @@
   .now-playing video { width: 100%; display: block; background: #000; aspect-ratio: 16/9; }
   .np-note { padding: 8px 14px 12px; font-size: 13px; color: var(--muted); }
   .np-note:empty { display: none; }
+  .np-durations {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px 14px; font-size: 13px; color: var(--muted);
+  }
+  .np-durations button {
+    border: 1px solid var(--line); background: var(--bg);
+    padding: 6px 12px; font-size: 14px; font-weight: 700;
+    cursor: pointer; font-family: inherit; color: var(--ink);
+  }
+  .np-durations button.sel { background: var(--accent); border-color: var(--accent); color: #fff; }
   .rest-timer {
     text-align: center;
     padding: 14px;
@@ -271,10 +281,17 @@
       <div class="np-label">Now</div>
       <div class="np-name" id="npName">Tap Start workout</div>
     </div>
-    <div class="np-timer" id="setTimer">0:00</div>
+    <div class="np-timer" id="setTimer">1:00</div>
   </div>
   <video id="npVideo" controls playsinline preload="metadata" loop></video>
   <div class="np-note" id="npNote"></div>
+  <div class="np-durations">
+    <span>Set timer:</span>
+    <button data-dur="30">30s</button>
+    <button data-dur="45">45s</button>
+    <button data-dur="60" class="sel">60s</button>
+    <button data-dur="90">90s</button>
+  </div>
 </div>
 
 <div class="rest-timer" id="restTimer">
@@ -356,7 +373,7 @@ CIRCUITS.forEach((c, ci) => {
 let current = 0;            // index of active set
 let mode = 'idle';          // 'idle' | 'exercise' | 'rest' | 'paused' | 'done'
 let pausedFrom = null;      // mode to return to on resume
-let setStart = null, setTick = null;
+let setTick = null;
 let restTick = null, restLeft = 0;
 let workoutStart = null, elapsedTick = null;
 
@@ -416,17 +433,31 @@ function loadNowPlaying() {
     }
   }
 }
+let setDuration = 60;
+let setRemaining = 60;
 function startSetTimer() {
   stopSetTimer();
-  setAccum = 0;
-  setStart = Date.now();
-  setTimerEl.textContent = '0:00';
+  setRemaining = setDuration;
+  setTimerEl.textContent = fmt(setRemaining);
   loadNowPlaying();
   setTick = setInterval(() => {
-    setTimerEl.textContent = fmt(Math.floor((Date.now() - setStart) / 1000));
+    setRemaining--;
+    setTimerEl.textContent = fmt(Math.max(0, setRemaining));
+    if (setRemaining <= 0) {
+      clearInterval(setTick); setTick = null;
+      playBeep();
+    }
   }, 1000);
 }
 function stopSetTimer() { clearInterval(setTick); setTick = null; }
+document.querySelectorAll('.np-durations button').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.np-durations button').forEach(x => x.classList.remove('sel'));
+    b.classList.add('sel');
+    setDuration = parseInt(b.dataset.dur, 10);
+    if (mode === 'exercise') startSetTimer();
+  });
+});
 
 function startElapsed() {
   if (workoutStart) return;
@@ -506,14 +537,14 @@ function render() {
 
 // ---------- Start / Pause ----------
 const btnStartPause = document.getElementById('btnStartPause');
-let setAccum = 0, workoutAccum = 0, restAccumLeft = 0;
+let workoutAccum = 0;
 
 function pauseAll() {
   if (mode !== 'exercise' && mode !== 'rest') return;
   pausedFrom = mode;
   mode = 'paused';
   // freeze timers, keeping accumulated values
-  if (setTick) { setAccum += Math.floor((Date.now() - setStart) / 1000); clearInterval(setTick); setTick = null; }
+  if (setTick) { clearInterval(setTick); setTick = null; }
   if (elapsedTick) { workoutAccum += Math.floor((Date.now() - workoutStart) / 1000); clearInterval(elapsedTick); elapsedTick = null; workoutStart = null; }
   if (restTick) { clearInterval(restTick); restTick = null; }
   btnStartPause.textContent = 'Resume';
@@ -522,11 +553,14 @@ function pauseAll() {
 function resumeAll() {
   if (mode !== 'paused') return;
   mode = pausedFrom || 'exercise';
-  // resume set timer from accumulated
-  setStart = Date.now();
-  setTick = setInterval(() => {
-    setTimerEl.textContent = fmt(setAccum + Math.floor((Date.now() - setStart) / 1000));
-  }, 1000);
+  // resume set countdown from where it left off
+  if (mode === 'exercise' && setRemaining > 0) {
+    setTick = setInterval(() => {
+      setRemaining--;
+      setTimerEl.textContent = fmt(Math.max(0, setRemaining));
+      if (setRemaining <= 0) { clearInterval(setTick); setTick = null; playBeep(); }
+    }, 1000);
+  }
   // resume elapsed
   workoutStart = Date.now();
   elapsedTick = setInterval(() => {
