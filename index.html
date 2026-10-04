@@ -202,6 +202,15 @@
   }
   .finish h2 { font-size: 34px; font-weight: 900; text-transform: uppercase; margin-bottom: 10px; }
   .finish p { color: var(--muted); font-size: 16px; }
+  .set-timer {
+    text-align: center;
+    padding: 16px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    margin-bottom: 16px;
+  }
+  .set-timer-label { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; }
+  .set-timer-time { font-size: 48px; font-weight: 900; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
   .rest-timer {
     text-align: center;
     padding: 14px;
@@ -233,9 +242,16 @@
 
 <div class="workout-head">
   <h2>Workout Mode</h2>
-  <div class="set-counter" id="setCounter">Set 1 of 32</div>
+  <div style="text-align:right;">
+    <div class="set-counter" id="setCounter">Set 1 of 32</div>
+    <div class="set-counter" id="elapsedTimer" style="font-size:14px;">0:00</div>
+  </div>
 </div>
 <div class="progress"><div class="fill" id="progressFill"></div></div>
+<div class="set-timer" id="setTimerWrap">
+  <div class="set-timer-label" id="setTimerLabel">Current set</div>
+  <div class="set-timer-time" id="setTimer">0:00</div>
+</div>
 
 <div class="rest-timer" id="restTimer">
   <div class="t" id="restTime">60</div>
@@ -340,6 +356,9 @@ function markActive() {
 
 function render() {
   if (current >= SETS.length) {
+    stopElapsed();
+    stopSetTimer();
+    document.getElementById('setTimerWrap').style.display = 'none';
     document.getElementById('finish').style.display = 'block';
     document.getElementById('controls').style.display = 'none';
     restTimer.style.display = 'none';
@@ -353,6 +372,7 @@ function render() {
   btnBack.disabled = current === 0;
   btnNext.disabled = current >= SETS.length - 1;
   markActive();
+  startSetTimer();
 }
 
 let audioCtx = null;
@@ -418,7 +438,42 @@ btnBack.addEventListener('click', () => {
   if (current > 0) { current--; render(); }
 });
 
+let workoutStart = null;
+let elapsedInterval = null;
+let setStart = null;
+let setInterval = null;
+function fmtTime(s) {
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return m + ':' + String(sec).padStart(2, '0');
+}
+function startElapsed() {
+  if (workoutStart) return;
+  workoutStart = Date.now();
+  elapsedInterval = setInterval(() => {
+    const s = Math.floor((Date.now() - workoutStart) / 1000);
+    document.getElementById('elapsedTimer').textContent = fmtTime(s);
+  }, 1000);
+}
+function stopElapsed() { clearInterval(elapsedInterval); }
+function startSetTimer() {
+  stopSetTimer();
+  setStart = Date.now();
+  const label = current < SETS.length ? SETS[current].name : 'Done';
+  document.getElementById('setTimerLabel').textContent = label;
+  document.getElementById('setTimer').textContent = '0:00';
+  setInterval = setInterval(() => {
+    const s = Math.floor((Date.now() - setStart) / 1000);
+    document.getElementById('setTimer').textContent = fmtTime(s);
+  }, 1000);
+}
+function stopSetTimer() { clearInterval(setInterval); }
+
+// Start total clock on first user interaction
+btnComplete.addEventListener('click', () => { startElapsed(); }, true);
+
 render();
+startSetTimer();
 </script>
 </body>
 </html>
