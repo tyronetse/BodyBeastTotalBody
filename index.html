@@ -170,6 +170,8 @@
     font-size: 13px;
     color: var(--muted);
   }
+  .top-controls { margin-bottom: 14px; }
+  .top-controls .btn { width: 100%; }
   .controls {
     display: grid;
     grid-template-columns: 1fr 2fr 1fr;
@@ -246,6 +248,9 @@
     <div class="set-counter" id="setCounter">Set 1 of 32</div>
     <div class="set-counter" id="elapsedTimer" style="font-size:14px;">0:00</div>
   </div>
+</div>
+<div class="top-controls">
+  <button class="btn" id="btnStartPause">Start workout</button>
 </div>
 <div class="progress"><div class="fill" id="progressFill"></div></div>
 <div class="set-timer" id="setTimerWrap">
@@ -331,7 +336,8 @@ CIRCUITS.forEach((c, ci) => {
 
 // ---------- State ----------
 let current = 0;            // index of active set
-let mode = 'exercise';      // 'exercise' | 'rest' | 'done'
+let mode = 'idle';          // 'idle' | 'exercise' | 'rest' | 'paused' | 'done'
+let pausedFrom = null;      // mode to return to on resume
 let setStart = null, setTick = null;
 let restTick = null, restLeft = 0;
 let workoutStart = null, elapsedTick = null;
@@ -381,6 +387,7 @@ function playBeep() {
 // ---------- Timers ----------
 function startSetTimer() {
   stopSetTimer();
+  setAccum = 0;
   setStart = Date.now();
   setTimerEl.textContent = '0:00';
   setTimerLabel.textContent = current < SETS.length ? SETS[current].name : 'Done';
@@ -394,7 +401,7 @@ function startElapsed() {
   if (workoutStart) return;
   workoutStart = Date.now();
   elapsedTick = setInterval(() => {
-    elapsedEl.textContent = fmt(Math.floor((Date.now() - workoutStart) / 1000));
+    elapsedEl.textContent = fmt(workoutAccum + Math.floor((Date.now() - workoutStart) / 1000));
   }, 1000);
 }
 function stopElapsed() { clearInterval(elapsedTick); }
@@ -467,6 +474,60 @@ function render() {
   markActive();
 }
 
+// ---------- Start / Pause ----------
+const btnStartPause = document.getElementById('btnStartPause');
+let setAccum = 0, workoutAccum = 0, restAccumLeft = 0;
+
+function pauseAll() {
+  if (mode !== 'exercise' && mode !== 'rest') return;
+  pausedFrom = mode;
+  mode = 'paused';
+  // freeze timers, keeping accumulated values
+  if (setTick) { setAccum += Math.floor((Date.now() - setStart) / 1000); clearInterval(setTick); setTick = null; }
+  if (elapsedTick) { workoutAccum += Math.floor((Date.now() - workoutStart) / 1000); clearInterval(elapsedTick); elapsedTick = null; workoutStart = null; }
+  if (restTick) { clearInterval(restTick); restTick = null; }
+  btnStartPause.textContent = 'Resume';
+}
+
+function resumeAll() {
+  if (mode !== 'paused') return;
+  mode = pausedFrom || 'exercise';
+  // resume set timer from accumulated
+  setStart = Date.now();
+  setTick = setInterval(() => {
+    setTimerEl.textContent = fmt(setAccum + Math.floor((Date.now() - setStart) / 1000));
+  }, 1000);
+  // resume elapsed
+  workoutStart = Date.now();
+  elapsedTick = setInterval(() => {
+    elapsedEl.textContent = fmt(workoutAccum + Math.floor((Date.now() - workoutStart) / 1000));
+  }, 1000);
+  // resume rest countdown if we were resting
+  if (mode === 'rest') {
+    restTick = setInterval(() => {
+      restLeft--;
+      restTime.textContent = restLeft;
+      if (restLeft <= 0) { clearInterval(restTick); playBeep(); advanceSet(); }
+    }, 1000);
+  }
+  btnStartPause.textContent = 'Pause';
+}
+
+btnStartPause.addEventListener('click', () => {
+  unlockAudio();
+  if (mode === 'idle') {
+    mode = 'exercise';
+    startElapsed();
+    startSetTimer();
+    render();
+    btnStartPause.textContent = 'Pause';
+  } else if (mode === 'paused') {
+    resumeAll();
+  } else if (mode === 'exercise' || mode === 'rest') {
+    pauseAll();
+  }
+});
+
 // ---------- Buttons ----------
 btnComplete.addEventListener('click', () => {
   unlockAudio();
@@ -495,7 +556,6 @@ btnBack.addEventListener('click', () => {
 });
 
 render();
-startSetTimer();
 </script>
 </body>
 </html>
