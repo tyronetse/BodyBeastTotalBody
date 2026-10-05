@@ -430,16 +430,19 @@ function playBeep() {
   try {
     unlockAudio();
     if (!audioCtx) return;
-    [0, 0.25, 0.5].forEach((d, i) => {
+    // Intense alarm: 4 loud square-wave beeps, rising on the last one —
+    // cuts through music playing on the phone
+    [0, 0.22, 0.44, 0.66].forEach((d, i) => {
       const o = audioCtx.createOscillator(), g = audioCtx.createGain();
       o.connect(g); g.connect(audioCtx.destination);
-      o.frequency.value = [660, 880, 990][i];
-      o.type = 'sine';
+      o.frequency.value = [990, 990, 990, 1485][i];
+      o.type = 'square';
       const t = audioCtx.currentTime + d;
       g.gain.setValueAtTime(0.001, t);
-      g.gain.exponentialRampToValueAtTime(0.5, t + 0.03);
-      g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
-      o.start(t); o.stop(t + 0.25);
+      g.gain.exponentialRampToValueAtTime(1.0, t + 0.02);
+      g.gain.setValueAtTime(1.0, t + 0.14);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+      o.start(t); o.stop(t + 0.2);
     });
   } catch (e) {}
 }
