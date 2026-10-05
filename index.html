@@ -470,6 +470,14 @@ function loadNowPlaying() {
       npVideo.setAttribute('src', s.video);
       npVideo.load();
     }
+    // Play the demo video right away when jumping to an exercise.
+    // Inside a tap this is a user gesture so it plays; if the browser
+    // blocks programmatic play (e.g. auto-advance), fail silently and
+    // leave the video ready with controls.
+    try {
+      const p = npVideo.play();
+      if (p && p.catch) p.catch(() => {});
+    } catch (e) { /* play() not supported */ }
   }
 }
 let setDuration = 60;
