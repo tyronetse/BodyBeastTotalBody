@@ -293,7 +293,7 @@
     </div>
     <div class="np-timer" id="setTimer">1:00</div>
   </div>
-  <video id="npVideo" controls playsinline preload="metadata" loop></video>
+  <video id="npVideo" controls playsinline preload="metadata" loop muted></video>
   <div class="np-note" id="npNote"></div>
   <div class="np-weight">
     <span>Weight:</span>
@@ -409,6 +409,7 @@ const restTimer = document.getElementById('restTimer');
 const restTime = document.getElementById('restTime');
 const npName = document.getElementById('npName');
 const npVideo = document.getElementById('npVideo');
+npVideo.muted = true; // keep demo videos silent so phone music keeps playing
 const npNote = document.getElementById('npNote');
 const setTimerEl = document.getElementById('setTimer');
 const nowPlaying = document.getElementById('nowPlaying');
